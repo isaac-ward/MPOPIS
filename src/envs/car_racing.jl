@@ -280,9 +280,13 @@ single-friction-coefficient brush tire model.
 M. Brown and J. C. Gerdes, Coordinating Tire Forces to Avoid Obstacles Using
 Nonlinear Model Predictive Control, in IEEE Transactions on Intelligent
 Vehicles, vol. 5, no. 1, pp. 21-31, March 2020, doi: 10.1109/TIV.2019.2955362.
+
+Give an optional learned model which is actually a python object (a NN
+trained with pytorch) 
 """
-function _step!(env::CarRacingEnv, a::Vector{Float64})
+function _step!(env::CarRacingEnv, a::Vector{Float64}, learned_model=nothing)
     env.t += 1
+
     x = env.state[1]
     y = env.state[2]
     Ψ = env.state[3]
@@ -334,13 +338,5 @@ function _step!(env::CarRacingEnv, a::Vector{Float64})
         y += (Vx * sin(Ψ) + Vy * cos(Ψ)) * δt   # Updated y position yaw is counterclockwise, x is north, y is west
     end
 
-    env.state[1] = x
-    env.state[2] = y
-    env.state[3] = Ψ
-    env.state[4] = Vx
-    env.state[5] = Vy
-    env.state[6] = Ψ_dot
-    env.state[7] = δ
-    env.state[8] = pedal
     return env
 end

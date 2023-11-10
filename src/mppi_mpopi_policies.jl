@@ -252,6 +252,10 @@ function simulate_model(pol::AbstractGMPPI_Policy, env::EnvpoolEnv,
     Vₖ = repeat(pol.U', K) + E'
 
     model_controls = get_model_controls(action_space(env), Vₖ, T)
+    # Need to pass in a learning based model if we want to use
+    # a learning based method
+    # TODO:LEARN: sim model. When we simulate we should note that the
+    # policy could be a learned model
     trajectory_cost = rollout_model(env, T, model_controls, pol)
     trajectory_cost += control_costs  # Adding based on "cost"
 
@@ -271,6 +275,10 @@ function simulate_model(pol::AbstractGMPPI_Policy, env::AbstractEnv,
         Vₖ = pol.U + E[:, k]
         control_cost = γ * U_orig' * Σ_inv * (Vₖ .- U_orig)
         model_controls = get_model_controls(action_space(sim_env), Vₖ, T)
+        # Need to pass in a learning based model if we want to use
+        # a learning based method
+        # TODO:LEARN: sim model. When we simulate we should note that the
+        # policy could be a learned model
         trajectory_cost[k] = rollout_model(sim_env, T, model_controls, pol, k)
         trajectory_cost[k] += control_cost  # Adding based on "cost"
     end
@@ -309,6 +317,7 @@ function calculate_trajectory_costs(pol::GMPPI_Policy, env::AbstractEnv)
     Σ_inv = Distributions.invcov(P)
 
     # Use the samples to simulate our model to get the costs
+    # TODO:LEARN: calc_traj_costs - Need to pass in a learning based model if we want to use
     trajectory_cost = simulate_model(pol, env, E, Σ_inv, pol.U)
     weights = compute_weights(pol.params.weight_method, trajectory_cost)
     return trajectory_cost, E, weights

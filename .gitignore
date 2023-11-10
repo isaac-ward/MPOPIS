@@ -1,3 +1,7 @@
+si/**
+dump/**
+__pycache__
+
 *.vscode
 Manifest.toml
 *.DS_Store

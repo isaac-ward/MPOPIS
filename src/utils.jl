@@ -109,6 +109,10 @@ function rollout_model(env::EnvpoolEnv, T::Int, model_controls::Array,
     traj_cost = zeros(K)
     for t ∈ 1:T
         env(model_controls[:, :, t])
+
+        # Need to implement a learning-based rollout here
+        # TODO:LEARN: rollout
+
         traj_cost -= reward(env) # Subtracting based on "reward"
         if pol.params.log
             for k ∈ K
@@ -135,6 +139,10 @@ function rollout_model(env::AbstractEnv, T::Int, model_controls::Matrix,
     for t ∈ 1:T
         controls = as == 1 ? model_controls[t] : model_controls[:, t]
         env(controls)
+
+        # Need to implement a learning-based rollout here
+        # TODO:LEARN: rollout
+
         traj_cost -= reward(env) # Subtracting based on "reward"
         if pol.params.log
             pol.logger.trajectories[k][t, :] = env.state

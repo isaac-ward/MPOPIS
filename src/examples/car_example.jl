@@ -1,3 +1,4 @@
+include("./py/pycall_build.jl")
 
 """
 Example simulating the car racing environment.
@@ -78,6 +79,8 @@ function simulate_car_racing(;
     text_with_plot = true,
     text_on_plot_xy = (80.0, -60.0),
     save_gif = false,
+    track = "curve.csv",
+    log_folder = "./logs/",
 )
 
     if num_cars > 1
@@ -167,10 +170,35 @@ function simulate_car_racing(;
     @printf(" : %7s", "Ex Time")
     @printf("\n")
 
+    # Ensure the logging folder exists
+    if !isdir(log_folder)
+        mkdir(log_folder)
+    end
+
+    # Load an learning-based model using pycall 
+    learning_based_model = get_python_trained_model()
+
+    # Will need to input a series of states into the NN in accordance with the NN;s
+    # window size. Create a (window_size, state_size)
+    window_size = 1
+    state_size = 8
+    window = zeros(Float64, window_size, state_size)
+
     for k ∈ 1:num_trials
+
+        # File per trial
+        timestamp = Dates.format(Dates.now(), "yyyy-mm-dd_HH-MM-SS")
+        # Include the trial index
+        timestamp = "trial-$k-$timestamp"
         
         if sim_type == :cr
-            env = CarRacingEnv(rng=MersenneTwister())
+            # Set the track when creating the environment
+            println("Using track: $track")
+            env = CarRacingEnv(
+                rng=MersenneTwister(),
+                track=track,
+            )
+
         elseif sim_type == :mcr
             env = MultiCarRacingEnv(num_cars, rng=MersenneTwister())
         end
@@ -209,6 +237,20 @@ function simulate_car_racing(;
             # Get reward at the step
             step_rew = reward(env)
             rew += step_rew
+
+            # Update the window with the new state and remove the oldest state
+            window = [window[2:end,:]; reshape(env.state, (1, length(env.state)))]
+
+            # Want to save with file name based on count
+            # Convert to table, these should each be rows in the csv
+            # Get the name of the file in the track variable
+            track_name = split(track, '/')[end]
+            CSV.write("$log_folder/states-$track_name-$timestamp.csv", [Tables.table(env.state)], writeheader=false, append=true, quotestrings=false, delim=',')
+            CSV.write("$log_folder/actions-$track_name-$timestamp.csv", [Tables.table(act)], writeheader=false, append=true, quotestrings=false, delim=',')
+
+            # Perform an inference on the state using pycall
+            inference = get_inference(learning_based_model, window)
+            println(inference)
 
             # Plot or collect the plot for the animation
             if plot_steps || save_gif
