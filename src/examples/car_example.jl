@@ -171,18 +171,14 @@ function simulate_car_racing(;
     @printf("\n")
 
     # Ensure the logging folder exists
-    if !isdir(log_folder)
-        mkdir(log_folder)
+    if !isnothing(log_folder)
+        if !isdir(log_folder)
+            mkdir(log_folder)
+        end
     end
 
     # Load an learning-based model using pycall 
     learning_based_model = get_python_trained_model()
-
-    # Will need to input a series of states into the NN in accordance with the NN;s
-    # window size. Create a (window_size, state_size)
-    window_size = 1
-    state_size = 8
-    window = zeros(Float64, window_size, state_size)
 
     for k ∈ 1:num_trials
 
@@ -227,8 +223,15 @@ function simulate_car_racing(;
         rew, cnt, lap, prev_y = 0, 0, 0, 0
         trk_viol, β_viol, crash_viol = 0, 0, 0
 
+        # Will need to input a series of states into the NN in accordance with the NNs
+        # window size. Create a (window_size, state_size)
+        window_size = 2
+        state_size = 8
+        window = zeros(Float64, window_size, state_size)
+
         # Main simulation loop
         while !env.done && cnt <= num_steps
+
             # Get action from policy
             act = pol(env)
             # Apply action to envrionment
@@ -238,19 +241,27 @@ function simulate_car_racing(;
             step_rew = reward(env)
             rew += step_rew
 
+            # And then this state after one application of the environment
+            this_state = env.state
+
             # Update the window with the new state and remove the oldest state
-            window = [window[2:end,:]; reshape(env.state, (1, length(env.state)))]
+            window = [window[2:end,:]; reshape(this_state, (1, length(this_state)))]
 
             # Want to save with file name based on count
             # Convert to table, these should each be rows in the csv
             # Get the name of the file in the track variable
-            track_name = split(track, '/')[end]
-            CSV.write("$log_folder/states-$track_name-$timestamp.csv", [Tables.table(env.state)], writeheader=false, append=true, quotestrings=false, delim=',')
-            CSV.write("$log_folder/actions-$track_name-$timestamp.csv", [Tables.table(act)], writeheader=false, append=true, quotestrings=false, delim=',')
+            if !isnothing(log_folder)
+                track_name = split(track, '/')[end]
+                CSV.write("$log_folder/states-$track_name-$timestamp.csv", [Tables.table(env.state)], writeheader=false, append=true, quotestrings=false, delim=',')
+                CSV.write("$log_folder/actions-$track_name-$timestamp.csv", [Tables.table(act)], writeheader=false, append=true, quotestrings=false, delim=',')
+            end
 
             # Perform an inference on the state using pycall
-            inference = get_inference(learning_based_model, window)
-            println(inference)
+            #println(size(window))
+            input_to_model = window[end,:]
+            input_to_model = reshape(input_to_model, (1, length(input_to_model)))
+            #println(size(input_to_model))
+            learning_inference = get_inference(learning_based_model, input_to_model)
 
             # Plot or collect the plot for the animation
             if plot_steps || save_gif
@@ -259,6 +270,29 @@ function simulate_car_racing(;
                 else 
                     p = plot(env, text_output=text_with_plot, text_xy=text_on_plot_xy)
                 end
+
+                # If we have learning based inference then plot that too
+                # Check if the inference is not nothing
+                if !isnothing(learning_inference)
+                    # Compute the direction from the current tot he predicted state
+                    # and plot that
+                    current_pos = env.state[1:2]
+                    predict_pos = learning_inference[1:2]
+                    direction = predict_pos - current_pos
+                    direction = direction / norm(direction)
+
+                    # Plot the direction with an exaggerated length
+                    scale_factor = 16
+                    to_plot_direction = direction * scale_factor
+                    plot!(
+                        p, 
+                        [current_pos[1], current_pos[1] + to_plot_direction[1]], 
+                        [current_pos[2], current_pos[2] + to_plot_direction[2]], 
+                        color=:red, 
+                        linewidth=2
+                    )
+                end
+
                 if save_gif frame(anim) end
                 if plot_steps display(p) end
             end

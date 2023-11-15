@@ -10,6 +10,7 @@ using PyCall
 
 # This is useful for formatting input data
 @pyimport torch
+@pyimport numpy as np
 
 function get_python_trained_model()
     # Use my python module which holds model definitions
@@ -34,12 +35,25 @@ function get_inference(model, window)
     # What is the window and state size? Gets input as (window_size, state_size)
     window_size, state_size = size(window)
 
-    # Denormalise the window
-    window = window .* stds .+ means
+    # Normalise the window
+    window = (window .- means) ./ stds
     # Reshape to (1, window_size, state_size)
     window = reshape(window, (1, window_size, state_size))
     # Tensorise 
     window = torch.FloatTensor(window)
+
     # Perform inference
-    return model(window)
+    inference, _ = model(window)
+
+    # Detach from the graph and numpify
+    inference = inference.detach().numpy()
+    # Resize so that we're size (state_size,), using numpy
+    inference = np.resize(inference, (state_size,))
+    # Convert back to a julia array that is 1,state_size
+    inference = convert(Array{Float64,2}, inference')
+    # Re normalise the inference, in an elementwise way
+    inference = (inference .* stds) .+ means
+
+    return inference
+
 end

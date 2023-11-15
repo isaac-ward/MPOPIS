@@ -338,5 +338,15 @@ function _step!(env::CarRacingEnv, a::Vector{Float64}, learned_model=nothing)
         y += (Vx * sin(Ψ) + Vy * cos(Ψ)) * δt   # Updated y position yaw is counterclockwise, x is north, y is west
     end
 
+    # Read it all back into env
+    env.state[1] = x
+    env.state[2] = y
+    env.state[3] = Ψ
+    env.state[4] = Vx
+    env.state[5] = Vy
+    env.state[6] = Ψ_dot
+    env.state[7] = δ
+    env.state[8] = pedal
+
     return env
 end

@@ -1,3 +1,4 @@
+*.gif
 si/**
 dump/**
 __pycache__

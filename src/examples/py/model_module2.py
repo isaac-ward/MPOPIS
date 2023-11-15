@@ -300,6 +300,14 @@ def load_model():
     Load a model from a checkpoint
     """
 
+    # Requires a datamodule
+    data_module = AutoDriftDataModule(
+        lookback_window_size=1,
+        batch_size=32,
+        train_ratio_to_use=1,
+        val_ratio_to_use=1,
+    )
+
     # Make the network
     nn = RegressionNN(
         input_size=8*window_size,
@@ -312,18 +320,9 @@ def load_model():
     model = SequenceLearner(nn)
     
     # Load the weights
-    folder_checkpoint_glob = "C:/Users/moose/Desktop/dev/aa290/pynb/autodrift10/m0q2wffn/checkpoints/*.ckpt"
-    available_checkpoints = glob(folder_checkpoint_glob)
-    print(f"Found {len(available_checkpoints)} checkpoints:")
-    for i,c in enumerate(available_checkpoints):
-        # Indicate which one is being used
-        if i == len(available_checkpoints) - 1:
-            print(f"\t{c} <-- using")
-        else:
-            print(f"\t{c}")
-
+    folder_checkpoint_glob = "C:/Users/moose/Desktop/dev/aa290/src/pynb/autodrift10/m0q2wffn/checkpoints/*.ckpt"
     # Get the latest checkpoint
-    checkpoint_path = available_checkpoints[-1]
+    checkpoint_path = sorted(glob(folder_checkpoint_glob))[-1]
     model.load_state_dict(torch.load(checkpoint_path)["state_dict"])
     
     return model
