@@ -258,10 +258,28 @@ function simulate_car_racing(;
 
             # Perform an inference on the state using pycall
             #println(size(window))
+            # TODO: not just last element to model
             input_to_model = window[end,:]
             input_to_model = reshape(input_to_model, (1, length(input_to_model)))
-            #println(size(input_to_model))
-            learning_inference = get_inference(learning_based_model, input_to_model)
+
+            # We want to do a batch inference on the model for each of the 
+            # num_samples. Prepare a (batch_size, window_size, state_size) matrix.
+            # Each sample will have a very small random perturbation added to it
+            # proprotional to the value of the window at that element
+            batched_input_to_model = zeros(Float64, num_samples, window_size, state_size)
+            for i ∈ 1:num_samples
+                # Add a small perturbation to the input proportional to some scale
+                # factor on the input
+                scale_factor = 0.03
+                # Random does mean 0 and std 1
+                perturbation = (randn(Float64, window_size, state_size) .* scale_factor) .+ window
+                batched_input_to_model[i,:,:] = perturbation
+            end
+            #println(size(batched_input_to_model))
+            # Input will be (n_samples=batch_size=~150, look_back_windows=1, state_size=8)
+            # Output will be (n_samples=batch_size=~150, state_size=8)
+            learning_inference = get_inference_batch(learning_based_model, batched_input_to_model)
+            #learning_inference = get_inference(learning_based_model, input_to_model)
 
             # Plot or collect the plot for the animation
             if plot_steps || save_gif
@@ -274,23 +292,33 @@ function simulate_car_racing(;
                 # If we have learning based inference then plot that too
                 # Check if the inference is not nothing
                 if !isnothing(learning_inference)
-                    # Compute the direction from the current tot he predicted state
-                    # and plot that
-                    current_pos = env.state[1:2]
-                    predict_pos = learning_inference[1:2]
-                    direction = predict_pos - current_pos
-                    direction = direction / norm(direction)
+                    # Plota vector for each predicted sample
+                    for i ∈ 1:num_samples
+                        # Compute the direction from the current tot he predicted state
+                        # and plot that
+                        current_pos = env.state[1:2]
+                        predict_pos = learning_inference[i,1:2]
+                        pred_direction = predict_pos - current_pos
+                        pred_direction = pred_direction / norm(pred_direction)
 
-                    # Plot the direction with an exaggerated length
-                    scale_factor = 16
-                    to_plot_direction = direction * scale_factor
-                    plot!(
-                        p, 
-                        [current_pos[1], current_pos[1] + to_plot_direction[1]], 
-                        [current_pos[2], current_pos[2] + to_plot_direction[2]], 
-                        color=:red, 
-                        linewidth=2
-                    )
+                        # Compute the true direction from the environment
+                        true_direction = batched_input_to_model[i,end,1:2] - window[end-1,1:2]
+                        true_direction = true_direction / norm(true_direction)
+
+                        # Weight the true direction 80% and the predicted direction 20%
+                        direction = 0.8 * true_direction + 0.2 * pred_direction
+
+                        # Plot the direction with an exaggerated length
+                        scale_factor = 16
+                        to_plot_direction = direction * scale_factor
+                        plot!(
+                            p, 
+                            [current_pos[1], current_pos[1] + to_plot_direction[1]], 
+                            [current_pos[2], current_pos[2] + to_plot_direction[2]], 
+                            color=:red, 
+                            linewidth=0.05
+                        )
+                    end
                 end
 
                 if save_gif frame(anim) end

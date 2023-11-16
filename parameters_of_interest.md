@@ -1,0 +1,17 @@
+- `m = 2000.0, 			                        # Mass (kg)`
+- `I_zz = 3764.0, 		                    	# Moment of inertia in vertical direction (kg m^2)`
+- `h_cm = 0.3,	 			                    # Height of CoM above ground (m)`
+- `l_f = 1.53, 			                        # Distance from CoM to front axle (m) ["a" in paper]`
+- `l_r = 1.23, 			                        # Distance from CoM to rear axle (m) ["b" in paper]`
+- `C_D0 = 241, 		    	                    # Constant drag term (N)`
+- `C_D1 = 25.1, 	                        	# Linear drag coefficient (N s/m)`
+- `C_αf = 150000.0,     	                    # Front cornering stiffness (N/rad)`
+- `C_αr = 280000.0,                         	# Rear cornering stiffness (N/rad)`
+- `μ_f = 0.9, 			                        # Front tire friction`
+- `μ_r = 0.9, 				                    # Rear tire friction`
+- `δ_max = deg2rad(18),	                        # Steering angle limits (rad)`
+- `δ_dot_max = deg2rad(90),                    	# Stearing angle rate limits (rad/s)`
+- `Fxmax = 7200,                                # maximum force due to motor torque (N)`
+- `Fxmin = 22500                                # maximum force due to breaking`
+- `λ_brake = 0.6,                               # Fixed brake distribution`
+- `λ_drive = 0.0,                               # Fixed drive distribution`
