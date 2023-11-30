@@ -33,13 +33,14 @@ include("examples/car_example.jl")
 
 # And then generate data
 # for track_name in ["curve", "curve1", "curve2", "curve3", "curve4", "curve5", "cubic", "cubic1", "cubic2", "cubic3", "cubic4", "cubic5"]
-for track_name in ["curve4"]
+for track_name in ["curve"] # cubic4
     simulate_car_racing(
-        num_steps=225,
+        num_steps=120,
+        horizon=20,
         num_samples=150,
         save_gif=true,
         # This plots the rollouts on the gif
-        plot_traj=false,
+        plot_traj=true,
         num_trials=1,
         track="C:/Users/moose/Desktop/dev/MPOPIS/src/envs/car_racing_tracks/$track_name.csv",
         #log_folder="C:/Users/moose/Desktop/dev/MPOPIS/dump/$track_name/",

@@ -225,7 +225,7 @@ function simulate_car_racing(;
 
         # Will need to input a series of states into the NN in accordance with the NNs
         # window size. Create a (window_size, state_size)
-        window_size = 2
+        window_size = 8
         state_size = 8
         window = zeros(Float64, window_size, state_size)
 
@@ -256,11 +256,8 @@ function simulate_car_racing(;
                 CSV.write("$log_folder/actions-$track_name-$timestamp.csv", [Tables.table(act)], writeheader=false, append=true, quotestrings=false, delim=',')
             end
 
-            # Perform an inference on the state using pycall
-            #println(size(window))
-            # TODO: not just last element to model
-            input_to_model = window[end,:]
-            input_to_model = reshape(input_to_model, (1, length(input_to_model)))
+            # The purpose of this next part is to plot the learning-based rollouts
+            learning_inferences = zeros(Float64, horizon, num_samples, state_size)
 
             # We want to do a batch inference on the model for each of the 
             # num_samples. Prepare a (batch_size, window_size, state_size) matrix.
@@ -272,14 +269,62 @@ function simulate_car_racing(;
                 # factor on the input
                 scale_factor = 0.03
                 # Random does mean 0 and std 1
-                perturbation = (randn(Float64, window_size, state_size) .* scale_factor) .+ window
-                batched_input_to_model[i,:,:] = perturbation
+                perturbation = randn(Float64, window_size, state_size) .* scale_factor
+                batched_input_to_model[i,:,:] = window .+ perturbation
             end
-            #println(size(batched_input_to_model))
             # Input will be (n_samples=batch_size=~150, look_back_windows=1, state_size=8)
             # Output will be (n_samples=batch_size=~150, state_size=8)
-            learning_inference = get_inference_batch(learning_based_model, batched_input_to_model)
-            #learning_inference = get_inference(learning_based_model, input_to_model)
+            learning_inferences[1,:,:] = get_inference_batch(learning_based_model, batched_input_to_model)
+
+            # We now have the first inference in the horizon for each of the samples. Now get 
+            # the remainder of the inferences to the horizon. Horizons have to be processed
+            # sequentially, but samples can be processed in parallel
+            for h ∈ 2:horizon
+                # Get the input to the model for this horizon, which
+                # comes from the learning inference from the previous horizon
+                batched_input_to_model = zeros(Float64, num_samples, window_size, state_size)
+
+                # At this horizon depth, figure out how many states will be from the window (actual)
+                # observations, and how many will be from the learning inference. Note that h=1 would
+                # be entirely from the window 
+                num_predicted_states = min(h - 1, window_size)          # One less than whatever horizon step we're at
+                num_actual_states = window_size - num_predicted_states  # Make up the rest
+                string_rep = "" 
+                # For the first num_actual_states, use the end of the actual window
+                for i ∈ 1:num_actual_states
+                    # Need to repeat:
+                    # Window is (window_size, state_size)
+                    # We are taking (1, state_size) pieces at a time
+                    # Destination is (num_samples, slice=1, state_size)
+                    useful_part_of_window = window[end - num_actual_states + i, :]
+                    # Reshape so that it is (1, state_size)
+                    reshaped_window = reshape(useful_part_of_window, (1, state_size))
+                    # Repeat & reshape so that it is (num_samples, 1, state_size)
+                    repeated_window = repeat(reshaped_window, outer=(num_samples, 1))
+                    repeated_window = reshape(repeated_window, (num_samples, 1, state_size))
+                    batched_input_to_model[:,i,:] = repeated_window
+
+                    # For debugging
+                    string_rep = string_rep * "A"
+                end
+                # For the remaining num_predicted_states, use the learning inference
+                for i ∈ 1:num_predicted_states
+                    # Learning inference is (horizon, num_samples, state_size)
+                    # Destination is (num_samples, slice=1, state_size)
+                    # So we need to reshape
+                    reshaped_learning_inferences = reshape(learning_inferences[i,:,:], (num_samples, 1, state_size))
+                    batched_input_to_model[:,num_actual_states+i,:] = reshaped_learning_inferences
+
+                    # For debugging
+                    string_rep = string_rep * "P"
+                end
+
+                #print("Horizon $h construction: $string_rep")
+
+                # Get the next step in the horizon for all samples at once
+                learning_inferences[h,:,:] = get_inference_batch(learning_based_model, batched_input_to_model)
+
+            end
 
             # Plot or collect the plot for the animation
             if plot_steps || save_gif
@@ -289,34 +334,48 @@ function simulate_car_racing(;
                     p = plot(env, text_output=text_with_plot, text_xy=text_on_plot_xy)
                 end
 
-                # If we have learning based inference then plot that too
-                # Check if the inference is not nothing
-                if !isnothing(learning_inference)
-                    # Plota vector for each predicted sample
-                    for i ∈ 1:num_samples
-                        # Compute the direction from the current tot he predicted state
-                        # and plot that
-                        current_pos = env.state[1:2]
-                        predict_pos = learning_inference[i,1:2]
-                        pred_direction = predict_pos - current_pos
-                        pred_direction = pred_direction / norm(pred_direction)
+                plot_learning = true
+                if plot_learning
+                    # If we have learning based inference then plot that too
+                    # Check if the inference is not nothing
+                    if !isnothing(learning_inferences)
+                        # Go through each sample and plot the trajectory out to the horizon
+                        # Learning inferences is (horizon, num_samples, state_size)
+                        for i ∈ 1:num_samples
+                            # Get the trajectory for this sample
+                            trajectory = learning_inferences[:,i,:]
+                            # Get the x and y position - prepend the known 
+                            # positions in this current state
+                            xs = [env.state[1]; trajectory[:,1]]
+                            ys = [env.state[2]; trajectory[:,2]]
+                            # println(trajectory[:,1])
+                            # println(trajectory[:,2])
+                            # Plot the trajectory
+                            plot!(
+                                p, 
+                                xs,
+                                ys,
+                                color=:red, 
+                                linewidth=0.05
+                            )
+                        end
 
-                        # Compute the true direction from the environment
-                        true_direction = batched_input_to_model[i,end,1:2] - window[end-1,1:2]
-                        true_direction = true_direction / norm(true_direction)
-
-                        # Weight the true direction 80% and the predicted direction 20%
-                        direction = 0.8 * true_direction + 0.2 * pred_direction
-
-                        # Plot the direction with an exaggerated length
-                        scale_factor = 16
-                        to_plot_direction = direction * scale_factor
+                        # Average the learning inferences over all samples
+                        # and plot that too. Learning inferences is
+                        # (horizon, num_samples, state_size) but we want the 
+                        # average to be (horizon, state_size)
+                        average = mean(learning_inferences, dims=2)[:,1,:]
+                        # Get the x and y position - prepend the known
+                        # positions in this current state
+                        xs = [env.state[1]; average[:,1]]
+                        ys = [env.state[2]; average[:,2]]
+                        # Plot the trajectory
                         plot!(
                             p, 
-                            [current_pos[1], current_pos[1] + to_plot_direction[1]], 
-                            [current_pos[2], current_pos[2] + to_plot_direction[2]], 
-                            color=:red, 
-                            linewidth=0.05
+                            xs,
+                            ys,
+                            color=:blue, 
+                            linewidth=1
                         )
                     end
                 end

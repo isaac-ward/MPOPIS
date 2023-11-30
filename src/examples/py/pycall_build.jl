@@ -16,7 +16,7 @@ function get_python_trained_model()
     # Use my python module which holds model definitions
     file_directory = "C:/Users/moose/Desktop/dev/MPOPIS/src/examples/py/"
     pushfirst!(PyVector(pyimport("sys")["path"]), file_directory)
-    model_module = pyimport("model_module")
+    model_module = pyimport("model_module2")
     println("Python learning module imported")
 
     # Want it in eval mode
@@ -27,6 +27,33 @@ function get_python_trained_model()
     return model
 end
 
+function normalize_tensor(tensor, means, stds)
+    num_samples, window_size, state_size = size(tensor)
+    # Iterate over every num_sample and window 
+    # and normalise each state measurement (there will
+    # be num_samples*window_size of these)
+    for i in 1:num_samples
+        for j in 1:window_size
+            for k in 1:state_size
+                tensor[i, j, k] = (tensor[i, j, k] - means[k]) / stds[k]
+            end
+        end
+    end
+    return tensor
+end
+function denormalize_tensor(tensor, means, stds)
+    num_samples, state_size = size(tensor)
+    # Iterate over every sample 
+    # and normalise each state measurement (there will
+    # be num_samples of these)
+    for i in 1:num_samples
+        for j in 1:state_size
+            tensor[i, j] = (tensor[i, j] * stds[j]) + means[j]
+        end
+    end
+    return tensor
+end
+
 function get_inference_batch(model, batch_window)
     # This is the mean and std of the training data
     means = [ 0.47824945  0.7140721   0.86563648  1. -0.02893655 -0.01286843 -0.0065491   0.81765136]
@@ -34,40 +61,61 @@ function get_inference_batch(model, batch_window)
 
     # What is the window and state size? Gets input as (batch_size, window_size, state_size)
     batch_size, window_size, state_size = size(batch_window)
+    # println("")
     # println("Batch size: ", batch_size)
     # println("Window size: ", window_size)
     # println("State size: ", state_size)
+    # println("Input size: ", size(batch_window))
     # println("means size", size(means))
     # println("stds size", size(stds))
 
-    # Normalise the batch_window by subtracting the mean and dividing by the std
-    # on every last dimension
-    #batch_window = (batch_window .- means) ./ stds
-    #println("Batch window shape: ", size(batch_window))
-    # Reshape to (batch_size, window_size, state_size)
-    #batch_window = reshape(batch_window, (batch_size, window_size, state_size))
-    #println("Batch window shape: ", size(batch_window))
+    # Normalise the batch_window
+    batch_window_original = batch_window
+    batch_window = normalize_tensor(batch_window, means, stds)
+    # Reshape to (batch_size, window_size*state_size) - the model deals in 
+    # inputs of size window_size*state_size
+    batch_window = reshape(batch_window, (batch_size, window_size*state_size))
     # Tensorise
     batch_window = torch.FloatTensor(batch_window)
-    #println("Batch window shape: ", batch_window.size())
 
     # Perform inference
-    inference, _ = model(batch_window)
+    output = model(batch_window)
+    inference, _ = output
 
     # Detach from the graph and numpify
     inference = inference.detach().numpy()
-    #println("Inference shape: ", size(inference))
     # Resize so that we're size (batch_size, state_size), using numpy
     inference = np.resize(inference, (batch_size, state_size))
-    #println("Inference shape: ", size(inference))
     # Convert back to a julia array that is (batch_size, state_size)
     inference = convert(Array{Float64, 2}, inference)
-    #println("Inference shape: ", size(inference))
     # Re normalise the inference, in an elementwise way
-    #inference = (inference .* stds) .+ means
-    #println("Inference shape: ", size(inference))
+    inference = denormalize_tensor(inference, means, stds)
 
-    return inference
+    # The result is a (batch_size, state_size) array
+    # Create a zeros array for debugging
+    debug_inference = zeros(batch_size, state_size)
+    # Go through every batch
+    for i in 1:batch_size
+        # Enter the x and y (first and second) elements
+        last1 = batch_window_original[i, end, :]
+        last2 = batch_window_original[i, end-1, :]
+        scale_velocity = +1
+        xguess = last1[1] + (last1[1] - last2[1])*scale_velocity
+        yguess = last1[2] + (last1[2] - last2[2])*scale_velocity
+        # Add a random perturbation
+        scale_factor = 0.5
+        xguess = xguess + randn() * scale_factor * (i/batch_size) + 0.5
+        yguess = yguess + randn() * scale_factor * (i/batch_size) + 0.5
+        # Normalise xy guessses as a vector and scale 
+        xnorm = xguess / sqrt(xguess^2 + yguess^2)
+        ynorm = yguess / sqrt(xguess^2 + yguess^2)
+        # Add to the debug inference
+        debug_inference[i, 1] = xguess
+        debug_inference[i, 2] = yguess
+    end
+
+    #return inference
+    return debug_inference
 
 end
 
